@@ -17,13 +17,13 @@ class MarketService:
         self.clock = clock
         self.clients = {False: BinanceHTTP(LIVE_URL, transport=transport, clock=clock),
                         True: BinanceHTTP(TESTNET_URL, transport=transport, clock=clock)}
-        self._symbols = None
-        self._symbols_at = 0
+        self._symbols: dict[bool, list[dict]] = {}
+        self._symbols_at: dict[bool, int] = {}
 
-    async def get_symbols(self) -> list[dict]:
-        if self._symbols is not None and self.clock() - self._symbols_at < 300_000:
-            return [dict(item) for item in self._symbols]
-        data = await self.clients[False].request("GET", "/fapi/v1/exchangeInfo")
+    async def get_symbols(self, *, testnet: bool = False) -> list[dict]:
+        if testnet in self._symbols and self.clock() - self._symbols_at[testnet] < 300_000:
+            return [dict(item) for item in self._symbols[testnet]]
+        data = await self.clients[testnet].request("GET", "/fapi/v1/exchangeInfo")
         try:
             symbols = [{"symbol": item["symbol"], "base_asset": item["baseAsset"],
                         "quote_asset": item["quoteAsset"]}
@@ -32,9 +32,9 @@ class MarketService:
                 raise ValueError
         except (KeyError, TypeError, ValueError):
             raise RuntimeError("币安交易对数据无效，请稍后重试") from None
-        self._symbols = sorted(symbols, key=lambda item: item["symbol"])
-        self._symbols_at = self.clock()
-        return [dict(item) for item in self._symbols]
+        self._symbols[testnet] = sorted(symbols, key=lambda item: item["symbol"])
+        self._symbols_at[testnet] = self.clock()
+        return [dict(item) for item in self._symbols[testnet]]
 
     async def get_market(self, config: StrategyConfig, symbol: str, limit: int = 300) -> MarketSnapshot:
         if not symbol.isalnum() or not symbol.endswith("USDT") or symbol != symbol.upper():
@@ -59,12 +59,17 @@ class MarketService:
                 raise ValueError
             if any(not all(math.isfinite(x) for x in (c.open, c.high, c.low, c.close, c.volume))
                    or c.low <= 0 or c.low > min(c.open, c.close)
-                   or c.high < max(c.open, c.close) or c.close_time < c.time for c in candles):
+                   or c.high < max(c.open, c.close) or c.volume < 0 or c.close_time < c.time for c in candles):
                 raise ValueError
         except (KeyError, IndexError, TypeError, ValueError):
             raise RuntimeError("币安行情数据无效，已停止使用该行情") from None
         if self.clock() - updated > 30_000 or updated - self.clock() > 5000:
             raise RuntimeError("币安最新成交价已过期，请检查网络和服务器时间")
+        step = INTERVALS[config.interval] * 1000
+        # 指标的每一步必须代表同一周期，不能把缺失或重复蜡烛当作正常历史。
+        if (any(c.close_time - c.time != step - 1 for c in candles)
+                or any(right.time - left.time != step for left, right in zip(candles, candles[1:]))):
+            raise RuntimeError("币安行情数据无效，蜡烛周期或连续性异常")
         return MarketSnapshot(symbol=symbol, interval=config.interval, source="binance", candles=candles,
                               last_price=price, change_pct=change, updated_at=updated)
 

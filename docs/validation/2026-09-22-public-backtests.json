@@ -1,0 +1,103 @@
+{
+  "summary_only": true,
+  "sampling_date": "2026-09-22",
+  "timezone": "Asia/Shanghai",
+  "description": "本次实际执行的真实公共历史行情回测摘要；未保存原始蜡烛或逐笔成交，不是可独立重放的数据集。",
+  "source": {
+    "market_source": "binance",
+    "base_url": "https://fapi.binance.com",
+    "endpoint": "/fapi/v1/klines",
+    "requested_limit": 1000,
+    "interval": "15m",
+    "execution": "backend.backtest.run_backtest",
+    "authenticated_requests": false,
+    "orders_submitted": false,
+    "sample_refetched_for_this_file": false
+  },
+  "window": {
+    "start_time": 1789175700000,
+    "end_time": 1790074799999,
+    "start_shanghai": "2026-09-12T09:15:00+08:00",
+    "end_shanghai": "2026-09-22T18:59:59.999+08:00",
+    "closed_bars_per_symbol": 999
+  },
+  "config": {
+    "mode": "paper",
+    "market_source": "binance",
+    "symbols": ["BTCUSDT", "ETHUSDT"],
+    "interval": "15m",
+    "leverage": 3,
+    "margin_mode": "isolated",
+    "initial_balance": 10000,
+    "order_margin": 100,
+    "max_position_margin": 1000,
+    "daily_loss_limit": 200,
+    "stop_loss_pct": 2,
+    "take_profit_pct": 4,
+    "macd_fast": 12,
+    "macd_slow": 26,
+    "macd_signal": 9,
+    "reverse_on_signal": true,
+    "fee_bps": 4,
+    "slippage_bps": 2
+  },
+  "config_note": "策略参数为实际调用时的默认配置，仅切换为真实行情；回测函数逐次独立传入下列三个币种，不按配置中的实时交易币种列表合并资金。",
+  "results": [
+    {
+      "symbol": "BTCUSDT",
+      "name_zh": "比特币",
+      "bars": 999,
+      "initial_balance": 10000,
+      "final_equity": 9966.169154829742,
+      "return_pct": -0.3383084517025736,
+      "net_pnl": -33.83084517025782,
+      "max_drawdown_pct": 0.4433856840250273,
+      "total_trades": 76,
+      "win_rate": 27.631578947368425,
+      "fees": 18.251103833621514
+    },
+    {
+      "symbol": "ETHUSDT",
+      "name_zh": "以太坊",
+      "bars": 999,
+      "initial_balance": 10000,
+      "final_equity": 9972.3631800306,
+      "return_pct": -0.2763681996940104,
+      "net_pnl": -27.636819969400676,
+      "max_drawdown_pct": 0.5989783039884319,
+      "total_trades": 76,
+      "win_rate": 26.31578947368421,
+      "fees": 18.251528868264852
+    },
+    {
+      "symbol": "SOLUSDT",
+      "name_zh": "索拉纳",
+      "bars": 999,
+      "initial_balance": 10000,
+      "final_equity": 9974.925462311465,
+      "return_pct": -0.2507453768853529,
+      "net_pnl": -25.0745376885352,
+      "max_drawdown_pct": 0.5530354023738708,
+      "total_trades": 72,
+      "win_rate": 29.166666666666668,
+      "fees": 17.29787536717071
+    }
+  ],
+  "limitations": [
+    "金额以泰达币计价。三币各自独立使用10000初始资金，不能相加当作组合收益。",
+    "仅采用已收盘蜡烛；上一根收盘交叉信号在下一根开盘成交，末尾仓位按末根收盘价结算。",
+    "每次成交计入单边0.04%手续费和0.02%不利方向滑点。",
+    "同一根同时触及止盈止损按止损优先；跳空按开盘价成交；每日限额在开盘、开仓后及收盘检查，不能保证损失上限。",
+    "不包含资金费率、强平、维持保证金、盘口深度及真实成交延迟。",
+    "最大回撤基于每根收盘权益，可能低估盘中回撤；此处回撤百分比以完整账户资金计算，单笔保证金仅100。",
+    "仅约10天的单段历史样本，三币在本次样本中均亏损，不能据此推断未来必亏或必赚。",
+    "本文件只记录已执行结果的摘要，未保存原始蜡烛，不应将其宣称为完整的可复现行情归档。"
+  ],
+  "official_references": {
+    "general_info": "https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/general-info",
+    "trade": "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/trade",
+    "account": "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/account",
+    "market_data": "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data",
+    "error_codes": "https://developers.binance.com/docs/derivatives/usds-margined-futures/error-code"
+  }
+}

@@ -72,6 +72,48 @@ def test_symbols_only_include_trading_usdt_perpetuals():
     assert asyncio.run(service.get_symbols()) == [{"symbol": "BTCUSDT", "base_asset": "BTC", "quote_asset": "USDT"}]
 
 
+def test_symbol_lists_and_cache_are_separate_for_testnet():
+    from backend.market import MarketService
+    hosts = []
+    def handle(request):
+        hosts.append(request.url.host)
+        base = "ETH" if request.url.host == "demo-fapi.binance.com" else "BTC"
+        return httpx.Response(200, json={"symbols": [{"symbol": base + "USDT", "baseAsset": base,
+            "quoteAsset": "USDT", "marginAsset": "USDT", "status": "TRADING", "contractType": "PERPETUAL"}]})
+    service = MarketService(transport=httpx.MockTransport(handle), clock=lambda: NOW)
+    async def scenario():
+        assert (await service.get_symbols())[0]["symbol"] == "BTCUSDT"
+        assert (await service.get_symbols(testnet=True))[0]["symbol"] == "ETHUSDT"
+        assert (await service.get_symbols())[0]["symbol"] == "BTCUSDT"
+        assert (await service.get_symbols(testnet=True))[0]["symbol"] == "ETHUSDT"
+    asyncio.run(scenario())
+    assert hosts == ["fapi.binance.com", "demo-fapi.binance.com"]
+
+
+@pytest.mark.parametrize("case", ["gap", "duplicate", "wrong_interval", "reverse", "negative_volume"])
+def test_invalid_candle_timeline_is_rejected_before_indicator_use(case):
+    from backend.market import MarketService
+    starts = [NOW - 180_000, NOW - 120_000, NOW - 60_000]
+    rows = [[start, "1", "1", "1", "1", "1", start + 59_999] for start in starts]
+    if case == "gap":
+        rows.pop(1)
+    elif case == "duplicate":
+        rows[1] = rows[0]
+    elif case == "wrong_interval":
+        rows[0][6] += 60_000
+    elif case == "reverse":
+        rows.reverse()
+    else:
+        rows[0][5] = "-1"
+    def handle(request):
+        data = rows if request.url.path.endswith("klines") else {
+            "symbol": "BTCUSDT", "lastPrice": "1", "closeTime": NOW, "priceChangePercent": "0"}
+        return httpx.Response(200, json=data)
+    service = MarketService(transport=httpx.MockTransport(handle), clock=lambda: NOW)
+    with pytest.raises(RuntimeError, match="行情数据无效"):
+        asyncio.run(service.get_market(StrategyConfig(market_source="binance", interval="1m"), "BTCUSDT"))
+
+
 def test_malformed_environment_proxy_returns_safe_runtime_error(monkeypatch):
     from backend.market import MarketService
     monkeypatch.setenv("HTTPS_PROXY", "http://private-host:not-a-port")

@@ -3,7 +3,7 @@
 所有 Python（编程语言）模块导入 `backend.models`。时间戳统一毫秒。配置字段名使用模型定义的下划线命名。
 
 ## 行情与交易适配（backend/exchange.py，backend/market.py）
-- `MarketService()`；`async get_market(config: StrategyConfig, symbol: str, limit: int = 300) -> MarketSnapshot`；`async get_symbols() -> list[dict]`，元素 `{symbol, base_asset, quote_asset}`。
+- `MarketService()`；`async get_market(config: StrategyConfig, symbol: str, limit: int = 300) -> MarketSnapshot`；`async get_symbols(*, testnet: bool = False) -> list[dict]`，元素 `{symbol, base_asset, quote_asset}`。测试网与实盘分别拉取并缓存合约列表，行情须通过周期和连续性检查。
 - `BinanceBroker(config: StrategyConfig)`；`async preflight() -> dict`，返回 `{wallet_balance, available_balance, positions: list[dict]}`，无凭据/双向持仓/多资产保证金/外部持仓或挂单须拒绝启动（首次启动不接管已有真实仓位）。
 - `async get_account() -> dict` 返回 `{wallet_balance, available_balance}`，分别为钱包余额与可用余额。
 - `async open_position(symbol: str, side: str, margin: float, price: float, client_id: str) -> dict`；side 为 long/short。返回 `{quantity, price, fee, order_id}`，只有确认全部成交才返回。实盘交易所数量精度/最小名义金额校验，返回实际价格与数量。

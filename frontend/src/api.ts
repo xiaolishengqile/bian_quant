@@ -9,7 +9,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     response = await fetch(`/api${path}`, {
       credentials: 'same-origin',
       ...init,
-      signal: init.signal ?? AbortSignal.timeout(45000),
+      signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(45000)]) : AbortSignal.timeout(45000),
       headers: { ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers },
     });
   } catch (error) {

@@ -433,3 +433,94 @@ def test_confirmed_not_sent_order_is_rejected_and_allows_config_repair(engine, m
     run(item.tick())
     assert len(run(item.snapshot())['orders']) == 1
     assert run(item.snapshot())['status']['state'] == 'running'
+
+
+def test_partial_reverse_close_never_opens_opposite_order(engine, monkeypatch):
+    class PartialCloseBroker(Broker):
+        async def close_position(self, symbol, side, quantity, client_id):
+            self.positions[0]['quantity'] = quantity/2
+            return {'quantity': quantity/2, 'price': 96, 'fee': .06, 'order_id': 'partial'}
+    item, market = engine
+    monkeypatch.setattr(module, 'BinanceBroker', PartialCloseBroker)
+    run(item.save_config(config(mode='testnet', market_source='binance')))
+    run(open_long(item, market))
+    market.values.extend([97, 96])
+    market.price = 96
+    run(item.tick())
+    run(item.tick())
+    state = run(item.snapshot())
+    assert state['status']['state'] == 'error'
+    assert len(state['orders']) == 2
+    assert state['orders'][0]['status'] == 'unknown'
+    assert item.broker.positions[0]['side'] == 'long'
+    with pytest.raises(RuntimeError, match='未知|核对'):
+        run(item.start())
+
+
+def test_paper_restart_still_protects_restored_position(engine, tmp_path):
+    item, market = engine
+    run(open_long(item, market))
+    restored = TradingEngine(str(tmp_path/'trading.db'), market)
+    try:
+        market.price = 70
+        run(restored.tick())
+        state = run(restored.snapshot())
+        assert state['status']['state'] == 'stopped'
+        assert state['positions'] == []
+        assert state['orders'][0]['reason'] == '止损'
+    finally:
+        restored.close()
+
+
+def test_daily_loss_remains_latched_after_partial_data_failure_and_restart(engine, monkeypatch, tmp_path):
+    item, market = engine
+    run(item.save_config(config(daily_loss_limit=10).model_copy(update={'symbols': ['BTCUSDT', 'ETHUSDT']})))
+    run(open_long(item, market))
+    original = market.get_market
+
+    async def partial(cfg, symbol, *args):
+        if symbol == 'ETHUSDT':
+            raise RuntimeError('行情暂不可用')
+        return await original(cfg, symbol, *args)
+
+    monkeypatch.setattr(market, 'get_market', partial)
+    market.price = 90
+    run(item.tick())
+    assert [p['symbol'] for p in run(item.snapshot())['positions']] == ['ETHUSDT']
+    monkeypatch.setattr(market, 'get_market', original)
+    market.price = 110
+    restored = TradingEngine(str(tmp_path/'trading.db'), market)
+    try:
+        run(restored.tick())
+        state = run(restored.snapshot())
+        assert state['summary']['daily_pnl'] > 0  # 反弹不撤销此前已触发的当日风险退出。
+        assert state['positions'] == []
+        assert state['status']['state'] == 'risk_stopped'
+        with pytest.raises(RuntimeError, match='每日'):
+            run(restored.start())
+        monkeypatch.setattr(module, '_now_ms', lambda: NOW+86400000)
+        run(restored.tick())
+        assert run(restored.snapshot())['status']['state'] == 'stopped'
+        assert not restored._daily_limit()
+    finally:
+        restored.close()
+
+
+def test_start_rechecks_daily_loss_after_syncing_real_wallet(engine, monkeypatch):
+    item, market = engine
+    monkeypatch.setattr(module, 'BinanceBroker', Broker)
+    run(item.save_config(config(mode='testnet', market_source='binance')))
+    run(item.start())
+    run(item.stop())
+
+    class ReducedWallet(Broker):
+        def __init__(self, cfg):
+            super().__init__(cfg)
+            self.wallet = 9700
+            self.available = 9700
+
+    monkeypatch.setattr(module, 'BinanceBroker', ReducedWallet)
+    with pytest.raises(RuntimeError, match='每日'):
+        run(item.start())
+    assert run(item.snapshot())['status']['state'] != 'running'
+    assert run(item.snapshot())['orders'] == []

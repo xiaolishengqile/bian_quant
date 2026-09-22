@@ -102,3 +102,21 @@ def test_market_accepts_short_and_unicode_exchange_symbols(tmp_path, symbol):
         assert c.get("/api/market", params={"symbol": symbol}).status_code == 200
         assert c.post("/api/backtest", json={"symbol": symbol}).status_code == 200
     assert observed == [symbol, symbol]
+
+
+def test_symbol_list_uses_selected_exchange_environment(tmp_path):
+    environments = []
+
+    class FixtureMarket:
+        async def get_symbols(self, *, testnet=False):
+            environments.append(testnet)
+            return [{"symbol": "BTCUSDT", "base_asset": "BTC", "quote_asset": "USDT"}]
+
+    app = create_app(db_path=str(tmp_path / "environments.db"), password="", market=FixtureMarket(),
+                     background=False, allowed_hosts=["testserver"])
+    with TestClient(app, client=("127.0.0.1", 51000)) as c:
+        config = c.get("/api/state").json()["config"]
+        for mode in ["testnet", "paper"]:
+            assert c.put("/api/config", json={**config, "mode": mode, "market_source": "binance"}).status_code == 200
+            assert c.get("/api/symbols").status_code == 200
+    assert environments == [True, False]

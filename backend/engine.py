@@ -23,8 +23,9 @@ class TradingEngine:
         self.broker = None
         self.data = self.storage.load() or self._initial(StrategyConfig())
         self.config = StrategyConfig.model_validate(self.data['config'])
-        self.data['status']['state'] = 'error' if self.storage.unresolved() else 'stopped'
+        self.data['status']['state'] = 'risk_stopped' if self.data.get('daily_loss_day') == self._day() else 'stopped'
         if self.storage.unresolved():
+            self.data['status']['state'] = 'error'
             self.data['status']['last_error'] = '存在成交状态未知的订单，请核对交易所和本地记录，禁止重新开仓'
         self.storage.save(self.data)
 
@@ -70,12 +71,14 @@ class TradingEngine:
         if self.data['day'] != self._day():
             self.data['day'] = self._day()
             self.data['day_start_equity'] = self._equity()
+            self.data.pop('daily_loss_day', None)
             if self.data['status']['state'] == 'risk_stopped':
                 self.data['status']['state'] = 'stopped'
                 self.data['status']['last_error'] = None
 
     def _daily_limit(self):
-        return self._equity() - self.data['day_start_equity'] <= -self.config.daily_loss_limit
+        return (self.data.get('daily_loss_day') == self.data['day'] or
+                self._equity() - self.data['day_start_equity'] <= -self.config.daily_loss_limit)
 
     def _log(self, message, level='info'):
         self.storage.log(_now_ms(), level, message)
@@ -132,6 +135,8 @@ class TradingEngine:
             if self.storage.unresolved():
                 raise RuntimeError('存在未知订单，请先核对交易所，禁止重新开仓')
             if self._daily_limit():
+                self.data['daily_loss_day'] = self.data['day']
+                self.storage.save(self.data)
                 raise RuntimeError('已触发每日亏损上限，请等待下一自然日')
             if self.data['status']['state'] == 'running':
                 return
@@ -152,6 +157,9 @@ class TradingEngine:
                     self.data['available_balance'] = float(account['available_balance'])
                     if first_account:
                         self.data.update(baseline=balance, day_start_equity=balance, account_initialized=True)
+                    if self._daily_limit():
+                        self.data['daily_loss_day'] = self.data['day']
+                        raise RuntimeError('已触发每日亏损上限，请等待下一自然日')
                 for symbol in self.config.symbols:
                     candles = self._closed(await self._market(symbol))
                     if len(candles) < self.config.macd_slow + self.config.macd_signal - 1:
@@ -261,7 +269,11 @@ class TradingEngine:
         margins = [position['margin'] for position in self.data['positions'].values()]
         excess_margin = (sum(margins) > self.config.max_position_margin+1e-6 or
                          any(margin > self.config.order_margin+1e-6 for margin in margins))
-        if self._daily_limit() or excess_margin:
+        daily_limit = self._daily_limit()
+        if daily_limit:
+            # 风控触发后锁存到次日；行情恢复、权益反弹或进程重启不能撤销退出。
+            self.data['daily_loss_day'] = self.data['day']
+        if daily_limit or excess_margin:
             reason = '保证金风控' if excess_margin else '每日亏损风控'
             self.data['status'].update(state='risk_stopped', last_error='已触发'+reason)
             for symbol in list(self.data['positions']):

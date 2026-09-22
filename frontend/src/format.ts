@@ -12,7 +12,15 @@ export function number(value: number | null | undefined, digits = 2): string {
   return value == null || !Number.isFinite(value) ? '—' : value.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 export function signed(value: number, digits = 2): string { return `${value > 0 ? '+' : ''}${number(value, digits)}`; }
-export function price(value: number): string { return number(value, value < 1 ? 5 : 2); }
+export function price(value: number): string {
+  if (!Number.isFinite(value)) return '—';
+  const digits = Math.min(12, Math.max(2, 7 - Math.floor(Math.log10(Math.abs(value) || 1))));
+  return value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: digits });
+}
+export function csvCell(value: string | number): string {
+  const text = typeof value === 'string' ? value.replace(/^[=+@\-\t\r\n]/, "'$&") : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
 export function clockTime(time: number | null | undefined): string {
   return time ? new Date(time).toLocaleTimeString('zh-CN', { hour12: false }) : '等待同步';
 }

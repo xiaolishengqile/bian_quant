@@ -150,7 +150,7 @@ def create_app(db_path=None, password=None, market=None, background=True, allowe
         if engine.config.market_source == "demo":
             assets = [("BTC", "比特币"), ("ETH", "以太坊"), ("SOL", "索拉纳"), ("BNB", "币安币"), ("XRP", "瑞波币"), ("DOGE", "狗狗币")]
             return {"symbols": [{"symbol": f"{symbol}USDT", "base_asset": symbol, "quote_asset": "USDT", "name": name} for symbol, name in assets], "source": "demo"}
-        return {"symbols": await market.get_symbols(), "source": "binance"}
+        return {"symbols": await market.get_symbols(testnet=engine.config.mode == "testnet"), "source": "binance"}
 
     backtest_lock = asyncio.Lock()
 

@@ -46,3 +46,30 @@ def test_gap_stop_uses_actual_next_open_instead_of_ideal_stop_price():
     result = run_backtest(candles, StrategyConfig(macd_fast=2, macd_slow=3, macd_signal=2), 'BTCUSDT')
     assert result['trades'][0]['reason'] == '跳空止损'
     assert result['trades'][0]['exit_price'] == pytest.approx(79.984)
+
+
+@pytest.mark.parametrize('fee_bps,slippage_bps', [(4, 0), (0, 4)])
+def test_opening_cost_daily_limit_exits_before_profitable_intrabar_move(fee_bps, slippage_bps):
+    candles = [Candle(time=i*60000, close_time=(i+1)*60000-1,
+                      open=98 if i == 5 else value, high=value,
+                      low=98 if i == 5 else value, close=value, volume=1)
+               for i, value in enumerate([100, 99, 98, 97, 98, 110])]
+    cfg = StrategyConfig(macd_fast=2, macd_slow=3, macd_signal=2,
+                         daily_loss_limit=.1, fee_bps=fee_bps, slippage_bps=slippage_bps)
+    result = run_backtest(candles, cfg, 'BTCUSDT')
+    trade = result['trades'][0]
+    assert trade['reason'] == '每日亏损风控'
+    assert trade['exit_time'] == trade['entry_time']
+    assert result['final_equity'] < cfg.initial_balance
+
+
+def test_opening_slippage_crossing_stop_exits_at_current_market_price():
+    candles = [Candle(time=i*60000, close_time=(i+1)*60000-1,
+                      open=value, high=value, low=value, close=value, volume=1)
+               for i, value in enumerate([100, 99, 98, 97, 98, 98])]
+    cfg = StrategyConfig(macd_fast=2, macd_slow=3, macd_signal=2,
+                         stop_loss_pct=.1, slippage_bps=100, fee_bps=0)
+    result = run_backtest(candles, cfg, 'BTCUSDT')
+    trade = result['trades'][0]
+    assert trade['exit_time'] == trade['entry_time']
+    assert trade['exit_price'] == pytest.approx(98*.99)

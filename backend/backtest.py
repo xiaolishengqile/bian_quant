@@ -76,6 +76,13 @@ def run_backtest(candles: list[Candle], config: StrategyConfig, symbol: str) -> 
                                 'take': fill*(1+sign*config.take_profit_pct/100)}
                     wallet -= opening_fee
                     fees += opening_fee
+                    # 与实时引擎一致，开仓成本越过日限额时立即退出，不能等待后续上涨弥补。
+                    at_open = wallet + (candle.open-fill)*position['quantity']*sign
+                    if at_open-day_start <= -config.daily_loss_limit:
+                        close_position(candle.open, candle.time, '每日亏损风控')
+                        stopped = True
+                    elif sign*(candle.open-position['stop']) <= 0:
+                        close_position(candle.open, candle.time, '止损')
         if position:
             sign = position['sign']
             stop_hit = candle.low <= position['stop'] if sign == 1 else candle.high >= position['stop']
@@ -105,6 +112,6 @@ def run_backtest(candles: list[Candle], config: StrategyConfig, symbol: str) -> 
             'fees': fees, 'trades': trades, 'equity_curve': curve, 'assumptions': [
                 '仅采用已收盘蜡烛；上一根收盘交叉信号在下一根开盘成交，末尾仓位按末根收盘价结算。',
                 '每次成交计入配置手续费和不利方向滑点；单币种独立使用初始资金，不能相加当作组合收益。',
-                '同一根同时触及止盈止损按止损优先；跳空按开盘价成交；每日限额在开盘和收盘检查，不能保证损失上限。',
+                '同一根同时触及止盈止损按止损优先；跳空按开盘价成交；每日限额在开盘、开仓后及收盘检查，不能保证损失上限。',
                 '不包含资金费率、强平、维持保证金、盘口深度及真实成交延迟；历史结果不代表未来收益。',
                 '最大回撤基于每根收盘权益，可能低估盘中回撤。']}
