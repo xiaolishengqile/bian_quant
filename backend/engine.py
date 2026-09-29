@@ -9,6 +9,7 @@ from backend.models import INTERVALS, StrategyConfig
 from backend.storage import Storage, account_key
 from backend.indicators import calculate_macd, signal_direction
 from backend.exchange import BinanceBroker, OrderNotSentError, connection_status
+from backend.credentials import CredentialStore
 
 
 def _now_ms():
@@ -19,6 +20,7 @@ class TradingEngine:
     def __init__(self, db_path: str, market):
         self.market = market
         self.storage = Storage(db_path)
+        self.credentials = CredentialStore(db_path)
         self.lock = asyncio.Lock()
         self.broker = None
         self.data = self.storage.load() or self._initial(StrategyConfig())
@@ -109,7 +111,7 @@ class TradingEngine:
         if self.config.mode == 'paper':
             return
         if self.broker is None:
-            self.broker = BinanceBroker(self.config)
+            self.broker = BinanceBroker(self.config, credentials=self.credentials)
         remote = await self.broker.get_positions()
         local = self.data['positions']
         if len(remote) != len(local):
@@ -145,7 +147,7 @@ class TradingEngine:
                     if self.data['positions']:
                         await self._reconcile()
                         raise RuntimeError('已有真实仓位，请先核对并平仓后再启动；停止期间继续风控')
-                    self.broker = BinanceBroker(self.config)
+                    self.broker = BinanceBroker(self.config, credentials=self.credentials)
                     account = await self.broker.preflight()
                     if account.get('positions'):
                         raise RuntimeError('账户存在外部仓位，禁止接管')
@@ -374,7 +376,7 @@ class TradingEngine:
             used_margin = sum(p['margin'] for p in positions)
             return {'config': self.config.model_dump(), 'status': dict(self.data['status']),
                     'positions': positions, 'orders': self.storage.orders(), 'logs': self.storage.logs(),
-                    'connections': connection_status(), 'summary': {
+                    'connections': connection_status(self.credentials), 'summary': {
                         'account_synced': self.config.mode == 'paper' or bool(self.data.get('account_initialized')),
                         'available_balance': self.data['wallet']-used_margin if self.config.mode == 'paper'
                         else self.data.get('available_balance'),

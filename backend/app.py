@@ -1,11 +1,14 @@
 """控制台接口宿主；交易循环独立于浏览器连接。"""
 import asyncio
 import contextlib
+import hmac
+import ipaddress
 import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -95,13 +98,60 @@ def create_app(db_path=None, password=None, market=None, background=True, allowe
 
     async def snapshot():
         state = await engine.snapshot()
-        state["connections"] = connection_status()
+        state["connections"] = connection_status(engine.credentials)
         if cycle_error:
             state["status"]["last_error"] = cycle_error
         return state
 
     @app.get("/api/state")
     async def state():
+        return await snapshot()
+
+    async def credential_input(request: Request) -> dict:
+        if len(password) < 12:
+            raise HTTPException(409, "请先在服务器设置至少十二位控制台口令并重启")
+        try:
+            host = request.url.hostname or ""
+            local_host = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            local_host = host == "localhost"
+        if not local_host and urlsplit(request.headers.get("origin", "")).scheme != "https":
+            raise HTTPException(403, "远程配置交易密钥须通过加密网页访问")
+        if len(await request.body()) > 2048:
+            raise HTTPException(400, "交易密钥输入过长")
+        try:
+            payload = await request.json()
+        except ValueError:
+            raise HTTPException(400, "请输入有效的配置") from None
+        if not isinstance(payload, dict) or not isinstance(payload.get("password"), str) or not hmac.compare_digest(payload["password"], password):
+            raise HTTPException(403, "控制台口令不正确")
+        return payload
+
+    def ensure_credentials_editable():
+        if engine.data["status"]["state"] == "running" or engine.data["positions"] or engine.storage.unresolved():
+            raise HTTPException(409, "请先停止策略、确认空仓并处理未知订单，再修改交易密钥")
+
+    @app.put("/api/credentials/{mode}")
+    async def save_credentials(mode: Literal["testnet", "live"], request: Request):
+        payload = await credential_input(request)
+        key, secret = payload.get("key"), payload.get("secret")
+        if (not isinstance(key, str) or not isinstance(secret, str) or
+                not all(1 <= len(value) <= 512 and not any(char.isspace() or ord(char) < 32 for char in value)
+                        for value in (key, secret))):
+            raise HTTPException(400, "请填写有效的接口标识和签名密钥")
+        async with engine.lock:
+            ensure_credentials_editable()
+            engine.credentials.save(mode, key, secret)
+            engine._log(f'{"实盘" if mode == "live" else "测试网"}交易密钥已更新')
+        return await snapshot()
+
+    @app.delete("/api/credentials/{mode}")
+    async def remove_credentials(mode: Literal["testnet", "live"], request: Request):
+        await credential_input(request)
+        async with engine.lock:
+            ensure_credentials_editable()
+            engine.credentials.remove(mode)
+            engine._log(f'{"实盘" if mode == "live" else "测试网"}网页交易密钥已移除')
         return await snapshot()
 
     @app.put("/api/config")

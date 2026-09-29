@@ -52,7 +52,7 @@ export default function App() {
           {page === 'strategy' && <StrategyPage state={state} symbols={console.symbols} saveConfig={console.saveConfig} busy={!!busy || !!error} />}
           {page === 'trades' && <TradesPage state={state} />}
           {page === 'backtest' && <BacktestPage state={state} symbols={console.symbols} />}
-          {page === 'settings' && <SettingsPage state={state} authRequired={auth.required} resetPaper={console.resetPaper} busy={!!busy} error={error} />}
+          {page === 'settings' && <SettingsPage state={state} authRequired={auth.required} resetPaper={console.resetPaper} saveCredentials={console.saveCredentials} removeCredentials={console.removeCredentials} busy={!!busy} error={error} />}
         </>}
       </main>
       <footer className="workspace-footer"><span><ChartNoAxesCombined size={13} />{state?.config.market_source === 'demo' ? '演示行情 · 非真实市场价格' : '币安行情 · 以交易所返回为准'}</span><span>最近同步 {clockTime(console.lastSync)}<span className="footer-divider">/</span>账户金额以泰达币计价</span></footer>

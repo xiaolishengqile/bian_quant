@@ -155,6 +155,17 @@ def test_live_gate_and_missing_credentials_prevent_network(monkeypatch):
     assert fixture.requests == []
 
 
+def test_broker_prefers_web_saved_credentials(tmp_path, monkeypatch):
+    from backend.credentials import CredentialStore
+    from backend.exchange import BinanceBroker
+    monkeypatch.setenv("BINANCE_TESTNET_API_KEY", "old-key")
+    monkeypatch.setenv("BINANCE_TESTNET_API_SECRET", "old-secret")
+    credentials = CredentialStore(str(tmp_path / "test.db"))
+    credentials.save("testnet", "web-key", "web-secret")
+    broker = BinanceBroker(StrategyConfig(mode="testnet", market_source="binance"), credentials=credentials)
+    assert broker._credentials() == ("web-key", "web-secret")
+
+
 def test_market_quantity_uses_step_not_display_precision_and_records_fee(monkeypatch):
     fixture = ExchangeFixture()
     client = broker(monkeypatch, fixture)

@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 import pytest
+import stat
 
 from backend.app import create_app
 
@@ -53,6 +54,37 @@ def test_live_start_is_locked_without_deployment_switch(tmp_path, monkeypatch):
         response = c.post("/api/start")
         assert response.status_code == 409
         assert c.get("/api/state").json()["orders"] == []
+
+
+def test_web_credentials_are_private_persistent_and_cannot_bypass_live_gate(tmp_path, monkeypatch):
+    monkeypatch.delenv("BINANCE_API_KEY", raising=False)
+    monkeypatch.delenv("BINANCE_API_SECRET", raising=False)
+    monkeypatch.delenv("ENABLE_LIVE_TRADING", raising=False)
+    login_password = "test-console-password"
+    headers = {"origin": "https://testserver"}
+    payload = {"key": "web-key", "secret": "private-secret", "password": login_password}
+    with make_client(tmp_path, login_password) as c:
+        assert c.put("/api/credentials/live", json=payload, headers=headers).status_code == 401
+        assert c.post("/api/login", json={"password": login_password}).status_code == 200
+        assert c.put("/api/credentials/live", json={**payload, "password": "wrong"}, headers=headers).status_code == 403
+        assert c.put("/api/credentials/live", json=payload).status_code == 403
+        response = c.put("/api/credentials/live", json=payload, headers=headers)
+        assert response.status_code == 200
+        assert response.json()["connections"]["live_managed"] is True
+        assert response.json()["connections"]["live_enabled"] is False
+        assert "private-secret" not in response.text
+        assert "web-key" not in c.get("/api/state").text
+        secret_file = tmp_path / "test.db.credentials"
+        assert stat.S_IMODE(secret_file.stat().st_mode) == 0o600
+        config = c.get("/api/state").json()["config"]
+        assert c.put("/api/config", json={**config, "mode": "live", "market_source": "binance"}).status_code == 200
+        assert c.post("/api/start").status_code == 409
+        assert c.app.state.engine.credentials.get("live") == ("web-key", "private-secret")
+    with make_client(tmp_path, login_password) as c:
+        c.post("/api/login", json={"password": login_password})
+        assert c.get("/api/state").json()["connections"]["live_configured"] is True
+        assert c.request("DELETE", "/api/credentials/live", json={"password": login_password}, headers=headers).status_code == 200
+        assert c.get("/api/state").json()["connections"]["live_configured"] is False
 
 
 def test_second_app_cannot_reset_running_persistent_state(tmp_path):

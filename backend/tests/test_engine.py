@@ -144,7 +144,7 @@ def test_utc_day_rollover_resets_daily_risk_base(engine, monkeypatch):
 
 
 class Broker:
-    def __init__(self, cfg):
+    def __init__(self, cfg, credentials=None):
         self.positions = []
         self.fail = False
         self.wallet = 10000
@@ -514,8 +514,8 @@ def test_start_rechecks_daily_loss_after_syncing_real_wallet(engine, monkeypatch
     run(item.stop())
 
     class ReducedWallet(Broker):
-        def __init__(self, cfg):
-            super().__init__(cfg)
+        def __init__(self, cfg, credentials=None):
+            super().__init__(cfg, credentials)
             self.wallet = 9700
             self.available = 9700
 

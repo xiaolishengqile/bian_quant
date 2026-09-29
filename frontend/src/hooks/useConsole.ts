@@ -70,12 +70,12 @@ export function useConsole() {
     catch (err) { handleError(err); }
     finally { setBusy(''); }
   }
-  async function mutate(action: string, message: string, body?: unknown): Promise<boolean> {
+  async function mutate(action: string, message: string, body?: unknown, method?: 'PUT' | 'DELETE'): Promise<boolean> {
     if (pending.current) return false;
     pending.current = true; ++revision.current;
     setBusy(action); setError(''); setNotice(''); setRefreshing(false);
     try {
-      const next = await request<ConsoleState>(`/${action}`, { method: action === 'config' ? 'PUT' : 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
+      const next = await request<ConsoleState>(`/${action}`, { method: method ?? (action === 'config' ? 'PUT' : 'POST'), body: body === undefined ? undefined : JSON.stringify(body) });
       setState(next); setLastSync(Date.now()); setNotice(message); return true;
     } catch (err) { handleError(err); return false; }
     finally { pending.current = false; setBusy(''); }
@@ -87,5 +87,9 @@ export function useConsole() {
     flatten: () => mutate('flatten', '平仓操作已完成，请核对持仓与成交记录。'),
     resetPaper: () => mutate('reset-paper', '模拟账户已重置。'),
     saveConfig: (config: StrategyConfig) => mutate('config', '策略配置已保存，下次运行将使用新参数。', config),
+    saveCredentials: (mode: 'testnet' | 'live', key: string, secret: string, password: string) =>
+      mutate(`credentials/${mode}`, '交易密钥已保存到服务器。', { key, secret, password }, 'PUT'),
+    removeCredentials: (mode: 'testnet' | 'live', password: string) =>
+      mutate(`credentials/${mode}`, '网页保存的交易密钥已移除。', { password }, 'DELETE'),
   };
 }

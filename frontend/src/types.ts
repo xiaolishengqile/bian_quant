@@ -22,7 +22,10 @@ export interface Order {
   quantity: number; price: number; fee: number; realized_pnl: number; reason: string; mode: Mode; status: string; fee_estimated?: boolean;
 }
 export interface Log { id: number | string; timestamp: number; level: 'info' | 'warning' | 'error'; message: string }
-export interface Connections { testnet_configured: boolean; live_configured: boolean; live_enabled: boolean }
+export interface Connections {
+  testnet_configured: boolean; live_configured: boolean; live_enabled: boolean;
+  testnet_managed: boolean; live_managed: boolean;
+}
 export interface ConsoleState {
   config: StrategyConfig;
   status: { state: 'stopped' | 'running' | 'error' | 'risk_stopped'; last_tick: number | null; last_error: string | null; started_at: number | null };

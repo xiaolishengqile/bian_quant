@@ -13,6 +13,6 @@ export default function Login({ login, busy, error }: { login: (password: string
       {error && <div className="inline-error" role="alert">{error}</div>}
       <button className="button primary" type="submit" disabled={busy || !password}>{busy ? '正在验证' : '进入工作台'}<ArrowRight size={16} /></button>
     </form>
-    <div className="login-note"><ShieldCheck size={15} /><span>交易密钥仅由服务器保管，浏览器不接收密钥。</span></div>
+    <div className="login-note"><ShieldCheck size={15} /><span>交易密钥提交后仅由服务器保管，页面不会回显。</span></div>
   </section><div className="login-footer">保持理性 · 尊重风险 · 让策略有迹可循</div></main>;
 }

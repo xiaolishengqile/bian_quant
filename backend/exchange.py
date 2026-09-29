@@ -24,12 +24,15 @@ def before_submission():
         raise OrderNotSentError("下单前检查失败，订单尚未发送，请核对配置与连接") from None
 
 
-def connection_status() -> dict:
-    return {
-        "testnet_configured": bool(os.getenv("BINANCE_TESTNET_API_KEY") and os.getenv("BINANCE_TESTNET_API_SECRET")),
-        "live_configured": bool(os.getenv("BINANCE_API_KEY") and os.getenv("BINANCE_API_SECRET")),
+def connection_status(credentials=None) -> dict:
+    status = {
+        "testnet_configured": bool(credentials.get("testnet")) if credentials else bool(os.getenv("BINANCE_TESTNET_API_KEY") and os.getenv("BINANCE_TESTNET_API_SECRET")),
+        "live_configured": bool(credentials.get("live")) if credentials else bool(os.getenv("BINANCE_API_KEY") and os.getenv("BINANCE_API_SECRET")),
         "live_enabled": os.getenv("ENABLE_LIVE_TRADING", "").lower() == "true",
     }
+    if credentials:
+        status.update(testnet_managed=credentials.has_saved("testnet"), live_managed=credentials.has_saved("live"))
+    return status
 
 
 def decimal(value) -> Decimal:
@@ -43,8 +46,9 @@ def decimal(value) -> Decimal:
 
 
 class BinanceBroker:
-    def __init__(self, config: StrategyConfig, *, transport=None, clock=now_ms):
+    def __init__(self, config: StrategyConfig, *, transport=None, clock=now_ms, credentials=None):
         self.config = config.model_copy(deep=True)
+        self.credentials = credentials
         self.http = BinanceHTTP(TESTNET_URL if config.mode == "testnet" else LIVE_URL, transport=transport, clock=clock)
         self._rules: dict[str, dict] = {}
         self._used_ids: set[str] = set()
@@ -56,11 +60,15 @@ class BinanceBroker:
             raise RuntimeError("模拟盘不能调用交易所下单接口")
         if self.config.mode == "live" and not connection_status()["live_enabled"]:
             raise RuntimeError("实盘部署开关未开启")
-        prefix = "BINANCE_TESTNET" if self.config.mode == "testnet" else "BINANCE"
-        key, secret = os.getenv(prefix + "_API_KEY"), os.getenv(prefix + "_API_SECRET")
-        if not key or not secret:
+        if self.credentials:
+            pair = self.credentials.get(self.config.mode)
+        else:
+            prefix = "BINANCE_TESTNET" if self.config.mode == "testnet" else "BINANCE"
+            key, secret = os.getenv(prefix + "_API_KEY"), os.getenv(prefix + "_API_SECRET")
+            pair = (key, secret) if key and secret else None
+        if not pair:
             raise RuntimeError("服务器尚未配置所选环境的币安密钥")
-        return key, secret
+        return pair
 
     async def _signed(self, method, path, params=None):
         return await self.http.request(method, path, params, credentials=self._credentials())

@@ -10,7 +10,7 @@
 - `async close_position(symbol: str, side: str, quantity: float, client_id: str) -> dict`；返回同上，必须 reduceOnly（仅减仓），成交后确认空仓。
 - `async get_positions() -> list[dict]`，`async cancel_orders() -> None`（仅本程序订单，非账户全部）。
 - 异常为 `RuntimeError` 或其子类，中文安全错误，不返回密钥/签名。明确发生在发送订单之前的校验失败使用 `OrderNotSentError`，允许用户修正参数后重启；未知成交错误必须保留未决意图并阻止引擎继续开仓，不能自动重发订单。
-- `connection_status() -> dict` 同步函数，返回 `{testnet_configured, live_configured, live_enabled}`，仅取环境变量：BINANCE_TESTNET_API_KEY、BINANCE_TESTNET_API_SECRET、BINANCE_API_KEY、BINANCE_API_SECRET、ENABLE_LIVE_TRADING。
+- `connection_status(credentials) -> dict` 同步函数，返回测试网／实盘是否已配置、是否由网页保存，以及实盘部署开关状态。网页保存的密钥优先于环境变量；实盘部署开关仍只取 `ENABLE_LIVE_TRADING`。
 
 ## 引擎（backend/engine.py、indicators.py、backtest.py、storage.py）
 - `TradingEngine(db_path: str, market: MarketService)`
@@ -27,7 +27,8 @@
 - positions `[{symbol, side: long|short, quantity, entry_price, mark_price, leverage, margin, unrealized_pnl, stop_loss, take_profit, opened_at}]`。
 - orders `[{id, timestamp, symbol, side, action: open|close, quantity, price, fee, realized_pnl, reason, mode, status}]`。
 - logs `[{id, timestamp, level: info|warning|error, message}]`。
-- connections `{testnet_configured, live_configured, live_enabled}`。
+- connections `{testnet_configured, live_configured, testnet_managed, live_managed, live_enabled}`；不返回密钥原文。
+- `PUT /api/credentials/{testnet|live}` 接收 `{key, secret, password}`，`DELETE` 接收 `{password}`；须已登录且再次验证工作台口令，远程访问须来自加密网页。运行中、持仓中或有未知订单时拒绝修改；成功后返回普通状态快照，不回显密钥。
 - `GET /api/market?symbol=BTCUSDT&interval=15m` -> MarketSnapshot 全部字段加 `indicators`（指标结果），不会静默退回演示行情。
 - `GET /api/symbols` -> `{symbols:[{symbol,base_asset,quote_asset}],source: binance|demo,error?:string}`。
 - `PUT /api/config` JSON 为完整 StrategyConfig -> 新 state。
